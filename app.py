@@ -12,7 +12,6 @@ from openpyxl import load_workbook
 
 st.set_page_config(
     page_title="Pinestate Liquor Template Builder",
-    page_icon="🍾",
     layout="wide",
 )
 
@@ -1103,9 +1102,3 @@ if st.session_state.get(
 
 
     st.divider()
-
-
-    st.caption(
-        "Duplicate records are automatically removed "
-        "before the output files are generated."
-    )
