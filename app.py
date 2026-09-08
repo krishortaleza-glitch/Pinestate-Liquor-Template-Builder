@@ -86,12 +86,10 @@ def source_column(df, excel_column):
     """
     Retrieve a DataFrame column using Excel-style letters.
 
-    Example:
-
-        A = first column
-        B = second column
-        H = eighth column
-        O = fifteenth column
+    A = first column
+    B = second column
+    H = eighth column
+    O = fifteenth column
     """
 
     index = ord(excel_column.upper()) - ord("A")
@@ -129,7 +127,7 @@ def write_to_template(
     """
     Write generated records into an Excel template.
 
-    start_row determines where data begins.
+    start_row determines where generated data begins.
 
     Promo Retail:
         Data starts row 2
@@ -143,11 +141,11 @@ def write_to_template(
 
     wb = load_template(template_filename)
 
-    # Use the first worksheet.
+    # Use the first worksheet in the supplied template.
     ws = wb[wb.sheetnames[0]]
 
     # --------------------------------------------------------
-    # Clear existing data
+    # Clear existing data below the header.
     # --------------------------------------------------------
 
     if ws.max_row >= start_row:
@@ -160,11 +158,10 @@ def write_to_template(
         ):
 
             for cell in row:
-
                 cell.value = None
 
     # --------------------------------------------------------
-    # Write generated records
+    # Write generated records.
     # --------------------------------------------------------
 
     for row_number, row_data in enumerate(
@@ -183,7 +180,7 @@ def write_to_template(
             ).value = value
 
     # --------------------------------------------------------
-    # Save workbook to memory
+    # Save workbook into memory.
     # --------------------------------------------------------
 
     output = io.BytesIO()
@@ -228,9 +225,7 @@ def build_products_lookup(products):
     Products File lookup:
 
         Products Column D = lookup key
-        Products Column H = value returned
-
-    Used for populating Output Column B.
+        Products Column H = value returned to Output Column B
     """
 
     lookup = {}
@@ -354,7 +349,7 @@ def build_eg_promo_retail(
         rows.append(output)
 
     # --------------------------------------------------------
-    # Remove duplicate records
+    # Remove duplicate records.
     # --------------------------------------------------------
 
     return remove_duplicates(rows)
@@ -371,11 +366,10 @@ def build_eg_standard_cost(
     """
     EG Standard Cost.
 
-    Only records where:
-
-        Raw Vendor Store Cost Column L = 0
-
+    ALL records from the Raw Vendor Store Cost File
     are included.
+
+    There is NO filter on Raw Column L.
 
     Output mapping:
 
@@ -412,22 +406,19 @@ def build_eg_standard_cost(
 
     rows = []
 
+    # --------------------------------------------------------
+    # IMPORTANT:
+    #
+    # ALL raw cost records are processed.
+    #
+    # There is intentionally NO:
+    #
+    #     Column L = 0
+    #
+    # filter here.
+    # --------------------------------------------------------
+
     for _, record in raw_cost.iterrows():
-
-        # ----------------------------------------------------
-        # Raw Column L
-        #
-        # L = position 11 because Python is zero-based.
-        # ----------------------------------------------------
-
-        promo_flag = clean(
-            record.iloc[11]
-        )
-
-        # Only Standard Cost records.
-        if promo_flag != "0":
-
-            continue
 
         # Output A:L = 12 columns.
         output = [""] * 12
@@ -481,8 +472,15 @@ def build_eg_standard_cost(
         # ----------------------------------------------------
         # B LOOKUP
         #
-        # Output I is matched against Products D.
-        # Products H is returned into Output B.
+        # Output I
+        #      ↓
+        # Products D
+        #      ↓
+        # Products H
+        #      ↓
+        # Output B
+        #
+        # No match = blank.
         # ----------------------------------------------------
 
         lookup_key = output[8]
@@ -497,7 +495,7 @@ def build_eg_standard_cost(
         rows.append(output)
 
     # --------------------------------------------------------
-    # Remove duplicate records
+    # Remove duplicate records.
     # --------------------------------------------------------
 
     return remove_duplicates(rows)
@@ -514,7 +512,7 @@ def build_eg_promo_cost(
     """
     EG Promo Cost.
 
-    Only records where:
+    ONLY records where:
 
         Raw Vendor Store Cost Column L = 1
 
@@ -565,7 +563,10 @@ def build_eg_promo_cost(
             record.iloc[11]
         )
 
-        # Only Promo Cost records.
+        # ----------------------------------------------------
+        # Promo Cost ONLY uses Column L = 1.
+        # ----------------------------------------------------
+
         if promo_flag != "1":
 
             continue
@@ -638,8 +639,15 @@ def build_eg_promo_cost(
         # ----------------------------------------------------
         # B LOOKUP
         #
-        # Output I is matched against Products D.
-        # Products H is returned into Output B.
+        # Output I
+        #      ↓
+        # Products D
+        #      ↓
+        # Products H
+        #      ↓
+        # Output B
+        #
+        # No match = blank.
         # ----------------------------------------------------
 
         lookup_key = output[8]
@@ -654,22 +662,22 @@ def build_eg_promo_cost(
         rows.append(output)
 
     # --------------------------------------------------------
-    # Remove duplicate records
+    # Remove duplicate records.
     # --------------------------------------------------------
 
     return remove_duplicates(rows)
 
 
 # ============================================================
-# STREAMLIT INTERFACE
+# STREAMLIT USER INTERFACE
 # ============================================================
 
 st.title(APP_TITLE)
 
 st.markdown(
     """
-    Upload the three required source files to generate the
-    Pine State Liquor EG templates.
+    Upload the three required source files to generate
+    the Pine State Liquor EG templates.
     """
 )
 
@@ -779,20 +787,29 @@ if process:
             # READ INPUT FILES
             # =================================================
 
+            # Products:
+            # Row 1 = headers
+            # Row 2 onward = data
+
             products = read_input_file(
                 products_file,
                 header_row=0,
             )
 
+
             # Promo Retail:
-            #
             # Row 2 = headers
-            # Row 3 = data
-            #
+            # Row 3 onward = data
+
             promo_retail = read_input_file(
                 promo_retail_file,
                 header_row=1,
             )
+
+
+            # Raw Vendor Store Cost:
+            # Row 1 = headers
+            # Row 2 onward = data
 
             raw_cost = read_input_file(
                 raw_cost_file,
@@ -826,17 +843,19 @@ if process:
 
 
             # =================================================
-            # BUILD OUTPUTS
+            # BUILD OUTPUT DATA
             # =================================================
 
             promo_retail_rows = build_eg_promo_retail(
                 promo_retail
             )
 
+
             standard_cost_rows = build_eg_standard_cost(
                 raw_cost,
                 products,
             )
+
 
             promo_cost_rows = build_eg_promo_cost(
                 raw_cost,
@@ -848,8 +867,11 @@ if process:
             # WRITE OUTPUT TEMPLATES
             # =================================================
 
-            # Promo Retail:
-            # Output data starts on row 2.
+            # -------------------------------------------------
+            # EG PROMO RETAIL
+            #
+            # Output data starts at row 2.
+            # -------------------------------------------------
 
             promo_retail_output = write_to_template(
                 "EG_PromoRetail.xlsx",
@@ -858,9 +880,12 @@ if process:
             )
 
 
-            # Standard Cost:
-            # Headers on row 11.
-            # Data starts row 12.
+            # -------------------------------------------------
+            # EG STANDARD COST
+            #
+            # Header = row 11
+            # Data = row 12
+            # -------------------------------------------------
 
             standard_cost_output = write_to_template(
                 "EG_StandardCost.xlsx",
@@ -869,9 +894,12 @@ if process:
             )
 
 
-            # Promo Cost:
-            # Headers on row 11.
-            # Data starts row 12.
+            # -------------------------------------------------
+            # EG PROMO COST
+            #
+            # Header = row 11
+            # Data = row 12
+            # -------------------------------------------------
 
             promo_cost_output = write_to_template(
                 "EG_PromoCost.xlsx",
@@ -881,16 +909,18 @@ if process:
 
 
             # =================================================
-            # SAVE TO SESSION STATE
+            # SAVE OUTPUTS IN SESSION STATE
             # =================================================
 
             st.session_state[
                 "promo_retail_output"
             ] = promo_retail_output
 
+
             st.session_state[
                 "standard_cost_output"
             ] = standard_cost_output
+
 
             st.session_state[
                 "promo_cost_output"
@@ -903,11 +933,13 @@ if process:
                 promo_retail_rows
             )
 
+
             st.session_state[
                 "standard_cost_count"
             ] = len(
                 standard_cost_rows
             )
+
 
             st.session_state[
                 "promo_cost_count"
@@ -915,13 +947,14 @@ if process:
                 promo_cost_rows
             )
 
+
             st.session_state[
                 "processed"
             ] = True
 
 
         # =====================================================
-        # SUCCESS MESSAGE
+        # SUCCESS
         # =====================================================
 
         st.success(
