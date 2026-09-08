@@ -7,7 +7,7 @@ from openpyxl import load_workbook
 
 
 # ============================================================
-# CONFIG
+# APP CONFIGURATION
 # ============================================================
 
 st.set_page_config(
@@ -23,11 +23,16 @@ TEMPLATE_DIR = BASE_DIR / "templates"
 
 
 # ============================================================
-# HELPERS
+# HELPER FUNCTIONS
 # ============================================================
 
 def clean(value):
-    """Convert values to clean strings while preserving blanks."""
+    """
+    Convert a value to a clean string.
+
+    Blank/NaN values are returned as an empty string.
+    """
+
     if value is None:
         return ""
 
@@ -37,30 +42,41 @@ def clean(value):
     return str(value).strip()
 
 
-def read_input_file(uploaded_file):
+def read_input_file(uploaded_file, header_row=0):
     """
     Read CSV or Excel input files.
-    All values are initially treated as strings to preserve
-    UPCs, vendor numbers, leading zeroes, etc.
+
+    header_row:
+        0 = headers are on Excel row 1
+        1 = headers are on Excel row 2
+
+    Promo Retail uses header_row=1 because:
+        Row 2 = headers
+        Row 3 = data
     """
 
     filename = uploaded_file.name.lower()
 
     if filename.endswith(".csv"):
+
         return pd.read_csv(
             uploaded_file,
             dtype=str,
             keep_default_na=False,
+            header=header_row,
         )
 
     elif filename.endswith((".xlsx", ".xls")):
+
         return pd.read_excel(
             uploaded_file,
             dtype=str,
             keep_default_na=False,
+            header=header_row,
         )
 
     else:
+
         raise ValueError(
             f"Unsupported file type: {uploaded_file.name}"
         )
@@ -68,17 +84,20 @@ def read_input_file(uploaded_file):
 
 def source_column(df, excel_column):
     """
-    Get an Excel-style column from a pandas DataFrame.
+    Retrieve a DataFrame column using Excel-style letters.
 
     Example:
+
         A = first column
         B = second column
         H = eighth column
+        O = fifteenth column
     """
 
     index = ord(excel_column.upper()) - ord("A")
 
     if index < 0 or index >= len(df.columns):
+
         raise ValueError(
             f"Input file does not contain column {excel_column}."
         )
@@ -87,11 +106,14 @@ def source_column(df, excel_column):
 
 
 def load_template(filename):
-    """Load an Excel template from the templates folder."""
+    """
+    Load an Excel template from the templates folder.
+    """
 
     path = TEMPLATE_DIR / filename
 
     if not path.exists():
+
         raise FileNotFoundError(
             f"Template '{filename}' was not found in the templates folder."
         )
@@ -99,42 +121,71 @@ def load_template(filename):
     return load_workbook(path)
 
 
-def write_to_template(template_filename, rows):
+def write_to_template(
+    template_filename,
+    rows,
+    start_row,
+):
     """
-    Write generated records into the supplied Excel template.
+    Write generated records into an Excel template.
 
-    Headers are on row 11.
-    Data starts on row 12.
+    start_row determines where data begins.
+
+    Promo Retail:
+        Data starts row 2
+
+    Standard Cost:
+        Data starts row 12
+
+    Promo Cost:
+        Data starts row 12
     """
 
     wb = load_template(template_filename)
 
-    # Use the first worksheet in the supplied template.
+    # Use the first worksheet.
     ws = wb[wb.sheetnames[0]]
 
-    # Clear existing detail rows while keeping rows 1-11 intact.
-    if ws.max_row >= 12:
+    # --------------------------------------------------------
+    # Clear existing data
+    # --------------------------------------------------------
+
+    if ws.max_row >= start_row:
 
         for row in ws.iter_rows(
-            min_row=12,
+            min_row=start_row,
             max_row=ws.max_row,
             min_col=1,
             max_col=ws.max_column,
         ):
+
             for cell in row:
+
                 cell.value = None
 
-    # Write records beginning on row 12.
-    for row_number, row_data in enumerate(rows, start=12):
+    # --------------------------------------------------------
+    # Write generated records
+    # --------------------------------------------------------
 
-        for column_number, value in enumerate(row_data, start=1):
+    for row_number, row_data in enumerate(
+        rows,
+        start=start_row,
+    ):
+
+        for column_number, value in enumerate(
+            row_data,
+            start=1,
+        ):
 
             ws.cell(
                 row=row_number,
                 column=column_number,
             ).value = value
 
-    # Return workbook as bytes.
+    # --------------------------------------------------------
+    # Save workbook to memory
+    # --------------------------------------------------------
+
     output = io.BytesIO()
 
     wb.save(output)
@@ -146,10 +197,13 @@ def write_to_template(template_filename, rows):
 
 def remove_duplicates(rows):
     """
-    Remove duplicate output records while preserving order.
+    Remove exact duplicate output records.
+
+    Original order is preserved.
     """
 
     seen = set()
+
     unique_rows = []
 
     for row in rows:
@@ -157,7 +211,9 @@ def remove_duplicates(rows):
         key = tuple(row)
 
         if key not in seen:
+
             seen.add(key)
+
             unique_rows.append(row)
 
     return unique_rows
@@ -169,22 +225,35 @@ def remove_duplicates(rows):
 
 def build_products_lookup(products):
     """
-    Products File:
+    Products File lookup:
 
-    Column D = lookup key
-    Column H = value returned to output Column B
+        Products Column D = lookup key
+        Products Column H = value returned
+
+    Used for populating Output Column B.
     """
 
     lookup = {}
 
-    products_key = source_column(products, "D")
-    products_h = source_column(products, "H")
+    products_key = source_column(
+        products,
+        "D",
+    )
 
-    for key, value in zip(products_key, products_h):
+    products_value = source_column(
+        products,
+        "H",
+    )
+
+    for key, value in zip(
+        products_key,
+        products_value,
+    ):
 
         key = clean(key)
 
         if key and key not in lookup:
+
             lookup[key] = clean(value)
 
     return lookup
@@ -194,18 +263,27 @@ def build_products_lookup(products):
 # EG PROMO RETAIL
 # ============================================================
 
-def build_eg_promo_retail(promo_retail):
+def build_eg_promo_retail(
+    promo_retail,
+):
     """
-    EG Promo Retail mapping:
+    EG Promo Retail mapping.
 
-    Output C = Promo Retail B
-    Output F = Promo Retail C
-    Output H = Promo Retail E
-    Output K = Promo Retail F
-    Output L = Promo Retail I
-    Output N = 08784
-    Output O = Pine State Liquor EG
-    Output P = 0
+    Source:
+        Promo Retail File
+
+    Output:
+
+        C = Source B
+        F = Source C
+        H = Source E
+        K = Source F
+        L = Source I
+        N = 08784
+        O = Pine State Liquor EG
+        P = 0
+
+    All other output columns remain blank.
     """
 
     rows = []
@@ -215,33 +293,70 @@ def build_eg_promo_retail(promo_retail):
         # Output has columns A:P = 16 columns.
         output = [""] * 16
 
-        # C <- Source B
-        output[2] = clean(record.iloc[1])
+        # ----------------------------------------------------
+        # C <- Promo Retail Column B
+        # ----------------------------------------------------
 
-        # F <- Source C
-        output[5] = clean(record.iloc[2])
+        output[2] = clean(
+            record.iloc[1]
+        )
 
-        # H <- Source E
-        output[7] = clean(record.iloc[4])
+        # ----------------------------------------------------
+        # F <- Promo Retail Column C
+        # ----------------------------------------------------
 
-        # K <- Source F
-        output[10] = clean(record.iloc[5])
+        output[5] = clean(
+            record.iloc[2]
+        )
 
-        # L <- Source I
-        output[11] = clean(record.iloc[8])
+        # ----------------------------------------------------
+        # H <- Promo Retail Column E
+        # ----------------------------------------------------
 
-        # N <- Default
+        output[7] = clean(
+            record.iloc[4]
+        )
+
+        # ----------------------------------------------------
+        # K <- Promo Retail Column F
+        # ----------------------------------------------------
+
+        output[10] = clean(
+            record.iloc[5]
+        )
+
+        # ----------------------------------------------------
+        # L <- Promo Retail Column I
+        # ----------------------------------------------------
+
+        output[11] = clean(
+            record.iloc[8]
+        )
+
+        # ----------------------------------------------------
+        # N = Default Vendor ID
+        # ----------------------------------------------------
+
         output[13] = "08784"
 
-        # O <- Default
+        # ----------------------------------------------------
+        # O = Default Vendor Description
+        # ----------------------------------------------------
+
         output[14] = "Pine State Liquor EG"
 
-        # P <- Default
+        # ----------------------------------------------------
+        # P = Default Cost Zone
+        # ----------------------------------------------------
+
         output[15] = "0"
 
         rows.append(output)
 
-    # Remove duplicates.
+    # --------------------------------------------------------
+    # Remove duplicate records
+    # --------------------------------------------------------
+
     return remove_duplicates(rows)
 
 
@@ -249,77 +364,131 @@ def build_eg_promo_retail(promo_retail):
 # EG STANDARD COST
 # ============================================================
 
-def build_eg_standard_cost(raw_cost, products):
+def build_eg_standard_cost(
+    raw_cost,
+    products,
+):
     """
-    Only include Raw Vendor Store Cost records where:
+    EG Standard Cost.
 
-        Column L = 0
+    Only records where:
 
-    Output:
+        Raw Vendor Store Cost Column L = 0
 
-    A = VC
-    B = Products H
-    C = Raw C
-    D = Raw O
-    E = blank
-    F = Raw K
-    G = Raw M
-    H = blank
-    I = Raw B
-    J = blank
-    K = blank
-    L = blank
+    are included.
 
-    Column B lookup:
+    Output mapping:
 
-        Output I -> Products D -> Products H
+        A = VC
+        B = Products Column H
+        C = Raw Column C
+        D = Raw Column O
+        E = blank
+        F = Raw Column K
+        G = Raw Column M
+        H = blank
+        I = Raw Column B
+        J = blank
+        K = blank
+        L = blank
 
-    If there is no match, Column B is blank.
+    Lookup:
+
+        Output I
+            ↓
+        Products Column D
+            ↓
+        Products Column H
+            ↓
+        Output B
+
+    If there is no match:
+        Output B = blank
     """
 
-    products_lookup = build_products_lookup(products)
+    products_lookup = build_products_lookup(
+        products
+    )
 
     rows = []
 
     for _, record in raw_cost.iterrows():
 
-        # Raw Column L = Excel column L = position 11
-        promo_flag = clean(record.iloc[11])
+        # ----------------------------------------------------
+        # Raw Column L
+        #
+        # L = position 11 because Python is zero-based.
+        # ----------------------------------------------------
 
-        # Standard Cost only
+        promo_flag = clean(
+            record.iloc[11]
+        )
+
+        # Only Standard Cost records.
         if promo_flag != "0":
+
             continue
 
+        # Output A:L = 12 columns.
         output = [""] * 12
 
-        # A
+        # ----------------------------------------------------
+        # A = VC
+        # ----------------------------------------------------
+
         output[0] = "VC"
 
+        # ----------------------------------------------------
         # C <- Raw Column C
-        output[2] = clean(record.iloc[2])
+        # ----------------------------------------------------
 
-        # D <- Raw Column O
-        output[3] = clean(record.iloc[14])
-
-        # F <- Raw Column K
-        output[5] = clean(record.iloc[10])
-
-        # G <- Raw Column M
-        output[6] = clean(record.iloc[12])
-
-        # I <- Raw Column B
-        output[8] = clean(record.iloc[1])
+        output[2] = clean(
+            record.iloc[2]
+        )
 
         # ----------------------------------------------------
-        # B is populated LAST.
+        # D <- Raw Column O
+        # ----------------------------------------------------
+
+        output[3] = clean(
+            record.iloc[14]
+        )
+
+        # ----------------------------------------------------
+        # F <- Raw Column K
+        # ----------------------------------------------------
+
+        output[5] = clean(
+            record.iloc[10]
+        )
+
+        # ----------------------------------------------------
+        # G <- Raw Column M
+        # ----------------------------------------------------
+
+        output[6] = clean(
+            record.iloc[12]
+        )
+
+        # ----------------------------------------------------
+        # I <- Raw Column B
+        # ----------------------------------------------------
+
+        output[8] = clean(
+            record.iloc[1]
+        )
+
+        # ----------------------------------------------------
+        # B LOOKUP
         #
-        # Output I is used as the lookup key against
-        # Products Column D.
+        # Output I is matched against Products D.
+        # Products H is returned into Output B.
         # ----------------------------------------------------
 
         lookup_key = output[8]
 
         if lookup_key:
+
             output[1] = products_lookup.get(
                 lookup_key,
                 "",
@@ -327,7 +496,10 @@ def build_eg_standard_cost(raw_cost, products):
 
         rows.append(output)
 
-    # Remove duplicates.
+    # --------------------------------------------------------
+    # Remove duplicate records
+    # --------------------------------------------------------
+
     return remove_duplicates(rows)
 
 
@@ -335,80 +507,145 @@ def build_eg_standard_cost(raw_cost, products):
 # EG PROMO COST
 # ============================================================
 
-def build_eg_promo_cost(raw_cost, products):
+def build_eg_promo_cost(
+    raw_cost,
+    products,
+):
     """
-    Only include Raw Vendor Store Cost records where:
+    EG Promo Cost.
 
-        Column L = 1
+    Only records where:
 
-    Output:
+        Raw Vendor Store Cost Column L = 1
 
-    A = VC
-    B = Products H
-    C = Raw C
-    D = Raw O
-    E = Raw L
-    F = Raw K
-    G = Raw M
-    H = Raw N
-    I = Raw B
-    J = blank
-    K = blank
-    L = blank
+    are included.
 
-    Column B lookup:
+    Output mapping:
 
-        Output I -> Products D -> Products H
+        A = VC
+        B = Products Column H
+        C = Raw Column C
+        D = Raw Column O
+        E = Raw Column L
+        F = Raw Column K
+        G = Raw Column M
+        H = Raw Column N
+        I = Raw Column B
+        J = blank
+        K = blank
+        L = blank
 
-    If there is no match, Column B is blank.
+    Lookup:
+
+        Output I
+            ↓
+        Products Column D
+            ↓
+        Products Column H
+            ↓
+        Output B
+
+    If there is no match:
+        Output B = blank
     """
 
-    products_lookup = build_products_lookup(products)
+    products_lookup = build_products_lookup(
+        products
+    )
 
     rows = []
 
     for _, record in raw_cost.iterrows():
 
+        # ----------------------------------------------------
         # Raw Column L
-        promo_flag = clean(record.iloc[11])
+        # ----------------------------------------------------
 
-        # Promo Cost only
+        promo_flag = clean(
+            record.iloc[11]
+        )
+
+        # Only Promo Cost records.
         if promo_flag != "1":
+
             continue
 
+        # Output A:L = 12 columns.
         output = [""] * 12
 
-        # A
+        # ----------------------------------------------------
+        # A = VC
+        # ----------------------------------------------------
+
         output[0] = "VC"
 
+        # ----------------------------------------------------
         # C <- Raw Column C
-        output[2] = clean(record.iloc[2])
+        # ----------------------------------------------------
 
-        # D <- Raw Column O
-        output[3] = clean(record.iloc[14])
-
-        # E <- Raw Column L
-        output[4] = clean(record.iloc[11])
-
-        # F <- Raw Column K
-        output[5] = clean(record.iloc[10])
-
-        # G <- Raw Column M
-        output[6] = clean(record.iloc[12])
-
-        # H <- Raw Column N
-        output[7] = clean(record.iloc[13])
-
-        # I <- Raw Column B
-        output[8] = clean(record.iloc[1])
+        output[2] = clean(
+            record.iloc[2]
+        )
 
         # ----------------------------------------------------
-        # B is populated using Output I as lookup key.
+        # D <- Raw Column O
+        # ----------------------------------------------------
+
+        output[3] = clean(
+            record.iloc[14]
+        )
+
+        # ----------------------------------------------------
+        # E <- Raw Column L
+        # ----------------------------------------------------
+
+        output[4] = clean(
+            record.iloc[11]
+        )
+
+        # ----------------------------------------------------
+        # F <- Raw Column K
+        # ----------------------------------------------------
+
+        output[5] = clean(
+            record.iloc[10]
+        )
+
+        # ----------------------------------------------------
+        # G <- Raw Column M
+        # ----------------------------------------------------
+
+        output[6] = clean(
+            record.iloc[12]
+        )
+
+        # ----------------------------------------------------
+        # H <- Raw Column N
+        # ----------------------------------------------------
+
+        output[7] = clean(
+            record.iloc[13]
+        )
+
+        # ----------------------------------------------------
+        # I <- Raw Column B
+        # ----------------------------------------------------
+
+        output[8] = clean(
+            record.iloc[1]
+        )
+
+        # ----------------------------------------------------
+        # B LOOKUP
+        #
+        # Output I is matched against Products D.
+        # Products H is returned into Output B.
         # ----------------------------------------------------
 
         lookup_key = output[8]
 
         if lookup_key:
+
             output[1] = products_lookup.get(
                 lookup_key,
                 "",
@@ -416,53 +653,71 @@ def build_eg_promo_cost(raw_cost, products):
 
         rows.append(output)
 
-    # Remove duplicates.
+    # --------------------------------------------------------
+    # Remove duplicate records
+    # --------------------------------------------------------
+
     return remove_duplicates(rows)
 
 
 # ============================================================
-# STREAMLIT UI
+# STREAMLIT INTERFACE
 # ============================================================
 
 st.title(APP_TITLE)
 
 st.markdown(
     """
-    Upload the three required source files below and generate
-    the three Pine State Liquor EG templates.
+    Upload the three required source files to generate the
+    Pine State Liquor EG templates.
     """
 )
 
 
-# ------------------------------------------------------------
-# FILE UPLOADS
-# ------------------------------------------------------------
+# ============================================================
+# FILE UPLOADERS
+# ============================================================
 
 st.subheader("Required Files")
 
 col1, col2, col3 = st.columns(3)
 
+
 with col1:
 
     products_file = st.file_uploader(
         "1. Products File",
-        type=["csv", "xlsx", "xls"],
+        type=[
+            "csv",
+            "xlsx",
+            "xls",
+        ],
         key="products_file",
     )
+
 
 with col2:
 
     promo_retail_file = st.file_uploader(
         "2. Promo Retail File",
-        type=["csv", "xlsx", "xls"],
+        type=[
+            "csv",
+            "xlsx",
+            "xls",
+        ],
         key="promo_retail_file",
     )
+
 
 with col3:
 
     raw_cost_file = st.file_uploader(
         "3. Raw Vendor Store Cost File",
-        type=["csv", "xlsx", "xls"],
+        type=[
+            "csv",
+            "xlsx",
+            "xls",
+        ],
         key="raw_cost_file",
     )
 
@@ -470,9 +725,9 @@ with col3:
 st.divider()
 
 
-# ------------------------------------------------------------
+# ============================================================
 # PROCESS BUTTON
-# ------------------------------------------------------------
+# ============================================================
 
 process = st.button(
     "🚀 Process Files",
@@ -483,65 +738,96 @@ process = st.button(
 
 if process:
 
-    # --------------------------------------------------------
-    # Validate uploads
-    # --------------------------------------------------------
+    # ========================================================
+    # VALIDATE UPLOADS
+    # ========================================================
 
     if not products_file:
-        st.error("Please upload the Products File.")
+
+        st.error(
+            "Please upload the Products File."
+        )
+
         st.stop()
+
 
     if not promo_retail_file:
-        st.error("Please upload the Promo Retail File.")
+
+        st.error(
+            "Please upload the Promo Retail File."
+        )
+
         st.stop()
 
+
     if not raw_cost_file:
-        st.error("Please upload the Raw Vendor Store Cost File.")
+
+        st.error(
+            "Please upload the Raw Vendor Store Cost File."
+        )
+
         st.stop()
 
 
     try:
 
-        with st.spinner("Processing files..."):
+        with st.spinner(
+            "Processing files..."
+        ):
 
-            # ------------------------------------------------
-            # Read input files
-            # ------------------------------------------------
+            # =================================================
+            # READ INPUT FILES
+            # =================================================
 
-            products = read_input_file(products_file)
+            products = read_input_file(
+                products_file,
+                header_row=0,
+            )
 
+            # Promo Retail:
+            #
+            # Row 2 = headers
+            # Row 3 = data
+            #
             promo_retail = read_input_file(
-                promo_retail_file
+                promo_retail_file,
+                header_row=1,
             )
 
             raw_cost = read_input_file(
-                raw_cost_file
+                raw_cost_file,
+                header_row=0,
             )
 
 
-            # ------------------------------------------------
-            # Validate source columns
-            # ------------------------------------------------
+            # =================================================
+            # VALIDATE SOURCE COLUMN COUNTS
+            # =================================================
 
             if len(products.columns) < 8:
+
                 raise ValueError(
                     "Products File must contain at least 8 columns."
                 )
 
+
             if len(promo_retail.columns) < 9:
+
                 raise ValueError(
                     "Promo Retail File must contain at least 9 columns."
                 )
 
+
             if len(raw_cost.columns) < 15:
+
                 raise ValueError(
                     "Raw Vendor Store Cost File must contain at least 15 columns."
                 )
 
 
-            # ------------------------------------------------
-            # Generate outputs
-            # ------------------------------------------------
+            # =================================================
+            # BUILD OUTPUTS
+            # =================================================
 
             promo_retail_rows = build_eg_promo_retail(
                 promo_retail
@@ -558,56 +844,85 @@ if process:
             )
 
 
-            # ------------------------------------------------
-            # Write to templates
-            # ------------------------------------------------
+            # =================================================
+            # WRITE OUTPUT TEMPLATES
+            # =================================================
+
+            # Promo Retail:
+            # Output data starts on row 2.
 
             promo_retail_output = write_to_template(
                 "EG_PromoRetail.xlsx",
                 promo_retail_rows,
+                start_row=2,
             )
+
+
+            # Standard Cost:
+            # Headers on row 11.
+            # Data starts row 12.
 
             standard_cost_output = write_to_template(
                 "EG_StandardCost.xlsx",
                 standard_cost_rows,
+                start_row=12,
             )
+
+
+            # Promo Cost:
+            # Headers on row 11.
+            # Data starts row 12.
 
             promo_cost_output = write_to_template(
                 "EG_PromoCost.xlsx",
                 promo_cost_rows,
+                start_row=12,
             )
 
 
-            # ------------------------------------------------
-            # Store outputs in session state
-            # ------------------------------------------------
+            # =================================================
+            # SAVE TO SESSION STATE
+            # =================================================
 
-            st.session_state["promo_retail_output"] = (
-                promo_retail_output
+            st.session_state[
+                "promo_retail_output"
+            ] = promo_retail_output
+
+            st.session_state[
+                "standard_cost_output"
+            ] = standard_cost_output
+
+            st.session_state[
+                "promo_cost_output"
+            ] = promo_cost_output
+
+
+            st.session_state[
+                "promo_retail_count"
+            ] = len(
+                promo_retail_rows
             )
 
-            st.session_state["standard_cost_output"] = (
-                standard_cost_output
+            st.session_state[
+                "standard_cost_count"
+            ] = len(
+                standard_cost_rows
             )
 
-            st.session_state["promo_cost_output"] = (
-                promo_cost_output
+            st.session_state[
+                "promo_cost_count"
+            ] = len(
+                promo_cost_rows
             )
 
-            st.session_state["promo_retail_count"] = (
-                len(promo_retail_rows)
-            )
+            st.session_state[
+                "processed"
+            ] = True
 
-            st.session_state["standard_cost_count"] = (
-                len(standard_cost_rows)
-            )
 
-            st.session_state["promo_cost_count"] = (
-                len(promo_cost_rows)
-            )
-
-            st.session_state["processed"] = True
-
+        # =====================================================
+        # SUCCESS MESSAGE
+        # =====================================================
 
         st.success(
             "Files processed successfully!"
@@ -627,23 +942,35 @@ if process:
 # DOWNLOAD SECTION
 # ============================================================
 
-if st.session_state.get("processed"):
+if st.session_state.get(
+    "processed",
+    False,
+):
 
-    st.subheader("Generated Files")
+    st.subheader(
+        "Generated Files"
+    )
 
 
-    # --------------------------------------------------------
-    # Promo Retail
-    # --------------------------------------------------------
+    # ========================================================
+    # EG PROMO RETAIL
+    # ========================================================
 
-    col1, col2 = st.columns([4, 1])
+    col1, col2 = st.columns(
+        [4, 1]
+    )
+
 
     with col1:
 
         st.write(
-            f"**EG_Promo Retail File.xlsx**  \n"
-            f"{st.session_state['promo_retail_count']:,} records"
+            f"""
+            **EG_Promo Retail File.xlsx**
+
+            {st.session_state['promo_retail_count']:,} records
+            """
         )
+
 
     with col2:
 
@@ -652,7 +979,9 @@ if st.session_state.get("processed"):
             data=st.session_state[
                 "promo_retail_output"
             ],
-            file_name="EG_Promo Retail File.xlsx",
+            file_name=(
+                "EG_Promo Retail File.xlsx"
+            ),
             mime=(
                 "application/vnd.openxmlformats-officedocument."
                 "spreadsheetml.sheet"
@@ -662,18 +991,25 @@ if st.session_state.get("processed"):
         )
 
 
-    # --------------------------------------------------------
-    # Standard Cost
-    # --------------------------------------------------------
+    # ========================================================
+    # EG STANDARD COST
+    # ========================================================
 
-    col1, col2 = st.columns([4, 1])
+    col1, col2 = st.columns(
+        [4, 1]
+    )
+
 
     with col1:
 
         st.write(
-            f"**EG_Standard Cost File.xlsx**  \n"
-            f"{st.session_state['standard_cost_count']:,} records"
+            f"""
+            **EG_Standard Cost File.xlsx**
+
+            {st.session_state['standard_cost_count']:,} records
+            """
         )
+
 
     with col2:
 
@@ -682,7 +1018,9 @@ if st.session_state.get("processed"):
             data=st.session_state[
                 "standard_cost_output"
             ],
-            file_name="EG_Standard Cost File.xlsx",
+            file_name=(
+                "EG_Standard Cost File.xlsx"
+            ),
             mime=(
                 "application/vnd.openxmlformats-officedocument."
                 "spreadsheetml.sheet"
@@ -692,18 +1030,25 @@ if st.session_state.get("processed"):
         )
 
 
-    # --------------------------------------------------------
-    # Promo Cost
-    # --------------------------------------------------------
+    # ========================================================
+    # EG PROMO COST
+    # ========================================================
 
-    col1, col2 = st.columns([4, 1])
+    col1, col2 = st.columns(
+        [4, 1]
+    )
+
 
     with col1:
 
         st.write(
-            f"**EG_Promo Cost File.xlsx**  \n"
-            f"{st.session_state['promo_cost_count']:,} records"
+            f"""
+            **EG_Promo Cost File.xlsx**
+
+            {st.session_state['promo_cost_count']:,} records
+            """
         )
+
 
     with col2:
 
@@ -712,7 +1057,9 @@ if st.session_state.get("processed"):
             data=st.session_state[
                 "promo_cost_output"
             ],
-            file_name="EG_Promo Cost File.xlsx",
+            file_name=(
+                "EG_Promo Cost File.xlsx"
+            ),
             mime=(
                 "application/vnd.openxmlformats-officedocument."
                 "spreadsheetml.sheet"
@@ -724,7 +1071,8 @@ if st.session_state.get("processed"):
 
     st.divider()
 
+
     st.caption(
-        "Duplicate records are automatically removed before "
-        "the output files are generated."
+        "Duplicate records are automatically removed "
+        "before the output files are generated."
     )
