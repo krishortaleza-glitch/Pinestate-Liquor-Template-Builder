@@ -12,7 +12,6 @@ from openpyxl import load_workbook
 
 st.set_page_config(
     page_title="Pinestate Liquor Template Builder",
-    page_icon="🍾",
     layout="wide",
 )
 
@@ -29,7 +28,6 @@ TEMPLATE_DIR = BASE_DIR / "templates"
 def clean(value):
     """
     Convert a value to a clean string.
-
     Blank/NaN values are returned as an empty string.
     """
 
@@ -131,17 +129,16 @@ def write_to_template(
         Data starts row 2
 
     Standard Cost:
-        Headers on row 11
+        Header row 11
         Data starts row 12
 
     Promo Cost:
-        Headers on row 11
+        Header row 11
         Data starts row 12
     """
 
     wb = load_template(template_filename)
 
-    # Use the first worksheet in the template.
     ws = wb[wb.sheetnames[0]]
 
     # --------------------------------------------------------
@@ -158,7 +155,6 @@ def write_to_template(
         ):
 
             for cell in row:
-
                 cell.value = None
 
     # --------------------------------------------------------
@@ -181,7 +177,7 @@ def write_to_template(
             ).value = value
 
     # --------------------------------------------------------
-    # Save workbook into memory.
+    # Save workbook to memory.
     # --------------------------------------------------------
 
     output = io.BytesIO()
@@ -223,36 +219,29 @@ def remove_duplicates(rows):
 
 def build_products_lookup(products):
     """
-    Build UPC lookup for Standard Cost and Promo Cost.
+    Products File lookup for Standard Cost and Promo Cost.
 
-    Products File:
-
-        Column A = Lookup Key
-        Column H = UPC returned to Output Column B
-
-    IMPORTANT:
-        Products Column D is NOT used.
+    Products Column A = lookup key
+    Products Column H = UPC returned to Output Column B
 
     Lookup:
 
-        Output Column I
+        Output I
             ↓
-        Products Column A
+        Products A
             ↓
-        Products Column H
+        Products H
             ↓
-        Output Column B
+        Output B
     """
 
     lookup = {}
 
-    # Products Column A = lookup key
     products_key = source_column(
         products,
         "A",
     )
 
-    # Products Column H = UPC
     products_upc = source_column(
         products,
         "H",
@@ -273,23 +262,79 @@ def build_products_lookup(products):
 
 
 # ============================================================
+# RAW COST LOOKUP FOR PROMO RETAIL
+# ============================================================
+
+def build_raw_cost_lookup(raw_cost):
+    """
+    Build lookup for EG Promo Retail Column M.
+
+    Lookup:
+
+        Promo Retail Column B
+            ↓
+        Raw Vendor Store Cost Column C
+            ↓
+        Raw Vendor Store Cost Column N
+            ↓
+        Promo Retail Column M
+    """
+
+    lookup = {}
+
+    raw_key = source_column(
+        raw_cost,
+        "C",
+    )
+
+    raw_value = source_column(
+        raw_cost,
+        "N",
+    )
+
+    for key, value in zip(
+        raw_key,
+        raw_value,
+    ):
+
+        key = clean(key)
+
+        if key and key not in lookup:
+
+            lookup[key] = clean(value)
+
+    return lookup
+
+
+# ============================================================
 # EG PROMO RETAIL
 # ============================================================
 
 def build_eg_promo_retail(
     promo_retail,
+    raw_cost,
 ):
     """
     EG Promo Retail mapping.
 
     Promo Retail Input:
 
-        Column B -> Output Column C
-        Column C -> Output Column F
-        Column D -> Output Column G
-        Column E -> Output Column H
-        Column F -> Output Column K
-        Column I -> Output Column L
+        Column B -> Output C
+        Column C -> Output F
+        Column D -> Output G
+        Column E -> Output H
+        Column F -> Output K
+        Column I -> Output L
+
+    NEW LOOKUP:
+
+        Promo Retail Column B
+            ↓
+        Raw Vendor Store Cost Column C
+            ↓
+        Raw Vendor Store Cost Column N
+            ↓
+        Output Column M
 
     Default values:
 
@@ -299,6 +344,11 @@ def build_eg_promo_retail(
 
     All other output columns remain blank.
     """
+
+    # Build Raw Cost C -> Raw Cost N lookup.
+    raw_cost_lookup = build_raw_cost_lookup(
+        raw_cost
+    )
 
     rows = []
 
@@ -356,6 +406,31 @@ def build_eg_promo_retail(
         )
 
         # ----------------------------------------------------
+        # M <- Raw Vendor Store Cost Column N
+        #
+        # Match:
+        #
+        # Promo Retail B
+        #       ↓
+        # Raw Cost C
+        #       ↓
+        # Raw Cost N
+        #       ↓
+        # Output M
+        # ----------------------------------------------------
+
+        lookup_key = clean(
+            record.iloc[1]
+        )
+
+        if lookup_key:
+
+            output[12] = raw_cost_lookup.get(
+                lookup_key,
+                "",
+            )
+
+        # ----------------------------------------------------
         # N = Default Value
         # ----------------------------------------------------
 
@@ -376,7 +451,7 @@ def build_eg_promo_retail(
         rows.append(output)
 
     # --------------------------------------------------------
-    # Remove duplicates.
+    # Remove duplicate records.
     # --------------------------------------------------------
 
     return remove_duplicates(rows)
@@ -422,9 +497,6 @@ def build_eg_standard_cost(
         Products Column H
             ↓
         Output Column B
-
-    If there is no match:
-        Output Column B = blank
     """
 
     products_lookup = build_products_lookup(
@@ -434,8 +506,6 @@ def build_eg_standard_cost(
     rows = []
 
     # --------------------------------------------------------
-    # IMPORTANT:
-    #
     # ALL Raw Vendor Store Cost records are processed.
     #
     # Raw Column L is NOT used as a filter.
@@ -495,8 +565,6 @@ def build_eg_standard_cost(
         # ----------------------------------------------------
         # B = UPC FROM PRODUCTS FILE
         #
-        # Match:
-        #
         # Output I
         #     ↓
         # Products A
@@ -518,7 +586,7 @@ def build_eg_standard_cost(
         rows.append(output)
 
     # --------------------------------------------------------
-    # Remove duplicates.
+    # Remove duplicate records.
     # --------------------------------------------------------
 
     return remove_duplicates(rows)
@@ -552,9 +620,6 @@ def build_eg_promo_cost(
         G = Raw Column M
         H = Raw Column N
         I = Raw Column B
-        J = blank
-        K = blank
-        L = blank
 
     UPC Lookup:
 
@@ -565,9 +630,6 @@ def build_eg_promo_cost(
         Products Column H
             ↓
         Output Column B
-
-    If there is no match:
-        Output Column B = blank
     """
 
     products_lookup = build_products_lookup(
@@ -662,8 +724,6 @@ def build_eg_promo_cost(
         # ----------------------------------------------------
         # B = UPC FROM PRODUCTS FILE
         #
-        # Match:
-        #
         # Output I
         #     ↓
         # Products A
@@ -685,7 +745,7 @@ def build_eg_promo_cost(
         rows.append(output)
 
     # --------------------------------------------------------
-    # Remove duplicates.
+    # Remove duplicate records.
     # --------------------------------------------------------
 
     return remove_duplicates(rows)
@@ -810,12 +870,9 @@ if process:
             # READ INPUT FILES
             # =================================================
 
-            # -------------------------------------------------
-            # Products File
-            #
+            # Products:
             # Row 1 = headers
             # Row 2 onward = data
-            # -------------------------------------------------
 
             products = read_input_file(
                 products_file,
@@ -823,12 +880,9 @@ if process:
             )
 
 
-            # -------------------------------------------------
-            # Promo Retail File
-            #
+            # Promo Retail:
             # Row 2 = headers
             # Row 3 onward = data
-            # -------------------------------------------------
 
             promo_retail = read_input_file(
                 promo_retail_file,
@@ -836,12 +890,9 @@ if process:
             )
 
 
-            # -------------------------------------------------
-            # Raw Vendor Store Cost File
-            #
+            # Raw Vendor Store Cost:
             # Row 1 = headers
             # Row 2 onward = data
-            # -------------------------------------------------
 
             raw_cost = read_input_file(
                 raw_cost_file,
@@ -879,7 +930,8 @@ if process:
             # =================================================
 
             promo_retail_rows = build_eg_promo_retail(
-                promo_retail
+                promo_retail,
+                raw_cost,
             )
 
 
