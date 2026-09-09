@@ -50,7 +50,7 @@ def read_input_file(uploaded_file, header_row=0):
         0 = headers are on Excel row 1
         1 = headers are on Excel row 2
 
-    Promo Retail uses header_row=1 because:
+    Promo Retail:
         Row 2 = headers
         Row 3 = data
     """
@@ -131,11 +131,11 @@ def write_to_template(
         Data starts row 2
 
     Standard Cost:
-        Header row 11
+        Headers on row 11
         Data starts row 12
 
     Promo Cost:
-        Header row 11
+        Headers on row 11
         Data starts row 12
     """
 
@@ -158,6 +158,7 @@ def write_to_template(
         ):
 
             for cell in row:
+
                 cell.value = None
 
     # --------------------------------------------------------
@@ -222,21 +223,36 @@ def remove_duplicates(rows):
 
 def build_products_lookup(products):
     """
-    Products File lookup:
+    Build UPC lookup for Standard Cost and Promo Cost.
 
-        Products Column D = lookup key
-        Products Column H = UPC returned to Output Column B
+    Products File:
 
-    Lookup is used for both Standard Cost and Promo Cost.
+        Column A = Lookup Key
+        Column H = UPC returned to Output Column B
+
+    IMPORTANT:
+        Products Column D is NOT used.
+
+    Lookup:
+
+        Output Column I
+            ↓
+        Products Column A
+            ↓
+        Products Column H
+            ↓
+        Output Column B
     """
 
     lookup = {}
 
+    # Products Column A = lookup key
     products_key = source_column(
         products,
-        "D",
+        "A",
     )
 
+    # Products Column H = UPC
     products_upc = source_column(
         products,
         "H",
@@ -268,12 +284,12 @@ def build_eg_promo_retail(
 
     Promo Retail Input:
 
-        B -> Output C
-        C -> Output F
-        D -> Output G
-        E -> Output H
-        F -> Output K
-        I -> Output L
+        Column B -> Output Column C
+        Column C -> Output Column F
+        Column D -> Output Column G
+        Column E -> Output Column H
+        Column F -> Output Column K
+        Column I -> Output Column L
 
     Default values:
 
@@ -340,19 +356,19 @@ def build_eg_promo_retail(
         )
 
         # ----------------------------------------------------
-        # N = Default Vendor ID
+        # N = Default Value
         # ----------------------------------------------------
 
         output[13] = "08784"
 
         # ----------------------------------------------------
-        # O = Default Vendor Description
+        # O = Default Value
         # ----------------------------------------------------
 
         output[14] = "Pine State Liquor EG"
 
         # ----------------------------------------------------
-        # P = Default Cost Zone
+        # P = Default Value
         # ----------------------------------------------------
 
         output[15] = "0"
@@ -360,7 +376,7 @@ def build_eg_promo_retail(
         rows.append(output)
 
     # --------------------------------------------------------
-    # Remove duplicate records.
+    # Remove duplicates.
     # --------------------------------------------------------
 
     return remove_duplicates(rows)
@@ -384,8 +400,8 @@ def build_eg_standard_cost(
 
     Output mapping:
 
-        A = Default "VC"
-        B = UPC from Products Column H
+        A = VC
+        B = Products Column H (UPC)
         C = Raw Column C
         D = Raw Column O
         E = blank
@@ -397,11 +413,11 @@ def build_eg_standard_cost(
         K = blank
         L = blank
 
-    Column B lookup:
+    UPC Lookup:
 
         Output Column I
             ↓
-        Products Column D
+        Products Column A
             ↓
         Products Column H
             ↓
@@ -418,9 +434,11 @@ def build_eg_standard_cost(
     rows = []
 
     # --------------------------------------------------------
-    # Process ALL Raw Vendor Store Cost records.
+    # IMPORTANT:
     #
-    # There is intentionally NO filter on Column L.
+    # ALL Raw Vendor Store Cost records are processed.
+    #
+    # Raw Column L is NOT used as a filter.
     # --------------------------------------------------------
 
     for _, record in raw_cost.iterrows():
@@ -477,8 +495,15 @@ def build_eg_standard_cost(
         # ----------------------------------------------------
         # B = UPC FROM PRODUCTS FILE
         #
-        # Match Output I against Products D.
-        # Return Products H.
+        # Match:
+        #
+        # Output I
+        #     ↓
+        # Products A
+        #     ↓
+        # Products H
+        #     ↓
+        # Output B
         # ----------------------------------------------------
 
         lookup_key = output[8]
@@ -493,7 +518,7 @@ def build_eg_standard_cost(
         rows.append(output)
 
     # --------------------------------------------------------
-    # Remove duplicate records.
+    # Remove duplicates.
     # --------------------------------------------------------
 
     return remove_duplicates(rows)
@@ -518,8 +543,8 @@ def build_eg_promo_cost(
 
     Output mapping:
 
-        A = Default "VC"
-        B = UPC from Products Column H
+        A = VC
+        B = Products Column H (UPC)
         C = Raw Column C
         D = Raw Column O
         E = Raw Column L
@@ -531,11 +556,11 @@ def build_eg_promo_cost(
         K = blank
         L = blank
 
-    Column B lookup:
+    UPC Lookup:
 
         Output Column I
             ↓
-        Products Column D
+        Products Column A
             ↓
         Products Column H
             ↓
@@ -637,8 +662,15 @@ def build_eg_promo_cost(
         # ----------------------------------------------------
         # B = UPC FROM PRODUCTS FILE
         #
-        # Match Output I against Products D.
-        # Return Products H.
+        # Match:
+        #
+        # Output I
+        #     ↓
+        # Products A
+        #     ↓
+        # Products H
+        #     ↓
+        # Output B
         # ----------------------------------------------------
 
         lookup_key = output[8]
@@ -653,7 +685,7 @@ def build_eg_promo_cost(
         rows.append(output)
 
     # --------------------------------------------------------
-    # Remove duplicate records.
+    # Remove duplicates.
     # --------------------------------------------------------
 
     return remove_duplicates(rows)
@@ -870,7 +902,7 @@ if process:
             # -------------------------------------------------
             # EG Promo Retail
             #
-            # Output data starts at row 2.
+            # Output data starts row 2.
             # -------------------------------------------------
 
             promo_retail_output = write_to_template(
@@ -954,7 +986,7 @@ if process:
 
 
         # =====================================================
-        # SUCCESS
+        # SUCCESS MESSAGE
         # =====================================================
 
         st.success(
