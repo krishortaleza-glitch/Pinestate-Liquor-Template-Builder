@@ -12,6 +12,7 @@ from openpyxl import load_workbook
 
 st.set_page_config(
     page_title="Pinestate Liquor Template Builder",
+    page_icon="🍾",
     layout="wide",
 )
 
@@ -126,21 +127,21 @@ def write_to_template(
     """
     Write generated records into an Excel template.
 
-    start_row determines where generated data begins.
-
     Promo Retail:
         Data starts row 2
 
     Standard Cost:
+        Header row 11
         Data starts row 12
 
     Promo Cost:
+        Header row 11
         Data starts row 12
     """
 
     wb = load_template(template_filename)
 
-    # Use the first worksheet in the supplied template.
+    # Use the first worksheet in the template.
     ws = wb[wb.sheetnames[0]]
 
     # --------------------------------------------------------
@@ -224,7 +225,9 @@ def build_products_lookup(products):
     Products File lookup:
 
         Products Column D = lookup key
-        Products Column H = value returned to Output Column B
+        Products Column H = UPC returned to Output Column B
+
+    Lookup is used for both Standard Cost and Promo Cost.
     """
 
     lookup = {}
@@ -234,21 +237,21 @@ def build_products_lookup(products):
         "D",
     )
 
-    products_value = source_column(
+    products_upc = source_column(
         products,
         "H",
     )
 
-    for key, value in zip(
+    for key, upc in zip(
         products_key,
-        products_value,
+        products_upc,
     ):
 
         key = clean(key)
 
         if key and key not in lookup:
 
-            lookup[key] = clean(value)
+            lookup[key] = clean(upc)
 
     return lookup
 
@@ -263,19 +266,20 @@ def build_eg_promo_retail(
     """
     EG Promo Retail mapping.
 
-    Source:
-        Promo Retail File
+    Promo Retail Input:
 
-    Output:
+        B -> Output C
+        C -> Output F
+        D -> Output G
+        E -> Output H
+        F -> Output K
+        I -> Output L
 
-        C = Source B
-        F = Source C
-        H = Source E
-        K = Source F
-        L = Source I
-        N = 08784
-        O = Pine State Liquor EG
-        P = 0
+    Default values:
+
+        Output N = 08784
+        Output O = Pine State Liquor EG
+        Output P = 0
 
     All other output columns remain blank.
     """
@@ -301,6 +305,14 @@ def build_eg_promo_retail(
 
         output[5] = clean(
             record.iloc[2]
+        )
+
+        # ----------------------------------------------------
+        # G <- Promo Retail Column D
+        # ----------------------------------------------------
+
+        output[6] = clean(
+            record.iloc[3]
         )
 
         # ----------------------------------------------------
@@ -372,8 +384,8 @@ def build_eg_standard_cost(
 
     Output mapping:
 
-        A = VC
-        B = Products Column H
+        A = Default "VC"
+        B = UPC from Products Column H
         C = Raw Column C
         D = Raw Column O
         E = blank
@@ -385,18 +397,18 @@ def build_eg_standard_cost(
         K = blank
         L = blank
 
-    Lookup:
+    Column B lookup:
 
-        Output I
+        Output Column I
             ↓
         Products Column D
             ↓
         Products Column H
             ↓
-        Output B
+        Output Column B
 
     If there is no match:
-        Output B = blank
+        Output Column B = blank
     """
 
     products_lookup = build_products_lookup(
@@ -406,15 +418,9 @@ def build_eg_standard_cost(
     rows = []
 
     # --------------------------------------------------------
-    # IMPORTANT:
+    # Process ALL Raw Vendor Store Cost records.
     #
-    # ALL raw cost records are processed.
-    #
-    # There is intentionally NO:
-    #
-    #     Column L = 0
-    #
-    # filter here.
+    # There is intentionally NO filter on Column L.
     # --------------------------------------------------------
 
     for _, record in raw_cost.iterrows():
@@ -469,17 +475,10 @@ def build_eg_standard_cost(
         )
 
         # ----------------------------------------------------
-        # B LOOKUP
+        # B = UPC FROM PRODUCTS FILE
         #
-        # Output I
-        #      ↓
-        # Products D
-        #      ↓
-        # Products H
-        #      ↓
-        # Output B
-        #
-        # No match = blank.
+        # Match Output I against Products D.
+        # Return Products H.
         # ----------------------------------------------------
 
         lookup_key = output[8]
@@ -519,8 +518,8 @@ def build_eg_promo_cost(
 
     Output mapping:
 
-        A = VC
-        B = Products Column H
+        A = Default "VC"
+        B = UPC from Products Column H
         C = Raw Column C
         D = Raw Column O
         E = Raw Column L
@@ -532,18 +531,18 @@ def build_eg_promo_cost(
         K = blank
         L = blank
 
-    Lookup:
+    Column B lookup:
 
-        Output I
+        Output Column I
             ↓
         Products Column D
             ↓
         Products Column H
             ↓
-        Output B
+        Output Column B
 
     If there is no match:
-        Output B = blank
+        Output Column B = blank
     """
 
     products_lookup = build_products_lookup(
@@ -636,17 +635,10 @@ def build_eg_promo_cost(
         )
 
         # ----------------------------------------------------
-        # B LOOKUP
+        # B = UPC FROM PRODUCTS FILE
         #
-        # Output I
-        #      ↓
-        # Products D
-        #      ↓
-        # Products H
-        #      ↓
-        # Output B
-        #
-        # No match = blank.
+        # Match Output I against Products D.
+        # Return Products H.
         # ----------------------------------------------------
 
         lookup_key = output[8]
@@ -786,9 +778,12 @@ if process:
             # READ INPUT FILES
             # =================================================
 
-            # Products:
+            # -------------------------------------------------
+            # Products File
+            #
             # Row 1 = headers
             # Row 2 onward = data
+            # -------------------------------------------------
 
             products = read_input_file(
                 products_file,
@@ -796,9 +791,12 @@ if process:
             )
 
 
-            # Promo Retail:
+            # -------------------------------------------------
+            # Promo Retail File
+            #
             # Row 2 = headers
             # Row 3 onward = data
+            # -------------------------------------------------
 
             promo_retail = read_input_file(
                 promo_retail_file,
@@ -806,9 +804,12 @@ if process:
             )
 
 
-            # Raw Vendor Store Cost:
+            # -------------------------------------------------
+            # Raw Vendor Store Cost File
+            #
             # Row 1 = headers
             # Row 2 onward = data
+            # -------------------------------------------------
 
             raw_cost = read_input_file(
                 raw_cost_file,
@@ -867,7 +868,7 @@ if process:
             # =================================================
 
             # -------------------------------------------------
-            # EG PROMO RETAIL
+            # EG Promo Retail
             #
             # Output data starts at row 2.
             # -------------------------------------------------
@@ -880,7 +881,7 @@ if process:
 
 
             # -------------------------------------------------
-            # EG STANDARD COST
+            # EG Standard Cost
             #
             # Header = row 11
             # Data = row 12
@@ -894,7 +895,7 @@ if process:
 
 
             # -------------------------------------------------
-            # EG PROMO COST
+            # EG Promo Cost
             #
             # Header = row 11
             # Data = row 12
@@ -1101,4 +1102,13 @@ if st.session_state.get(
         )
 
 
+    # ========================================================
+    # FOOTER
+    # ========================================================
+
     st.divider()
+
+    st.caption(
+        "Duplicate records are automatically removed "
+        "before the output files are generated."
+    )
