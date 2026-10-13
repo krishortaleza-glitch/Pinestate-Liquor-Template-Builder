@@ -603,11 +603,13 @@ def build_eg_promo_cost(
     """
     EG Promo Cost.
 
-    ONLY records where:
+    Promo identification rule used here:
+        Include records where Raw Vendor Store Cost Column N (endDate)
+        is populated. The provided source file has no explicit promo flag;
+        confirm this rule matches your business process.
 
-        Raw Vendor Store Cost Column L = 1
-
-    are included.
+    Output Column F uses Raw Column J (caseCost), not Column K
+    (frontLineCost).
 
     Output mapping:
 
@@ -641,18 +643,19 @@ def build_eg_promo_cost(
     for _, record in raw_cost.iterrows():
 
         # ----------------------------------------------------
-        # Raw Column L
+        # Raw Column N = endDate
         # ----------------------------------------------------
 
-        promo_flag = clean(
-            record.iloc[11]
+        promo_end_date = clean(
+            record.iloc[13]
         )
 
         # ----------------------------------------------------
-        # Promo Cost ONLY uses Column L = 1.
+        # Include records with a populated endDate.
+        # The source file does not contain an explicit promo flag.
         # ----------------------------------------------------
 
-        if promo_flag != "1":
+        if not promo_end_date:
 
             continue
 
@@ -690,11 +693,11 @@ def build_eg_promo_cost(
         )
 
         # ----------------------------------------------------
-        # F <- Raw Column K
+        # F <- Raw Column J (caseCost)
         # ----------------------------------------------------
 
         output[5] = clean(
-            record.iloc[10]
+            record.iloc[9]
         )
 
         # ----------------------------------------------------
