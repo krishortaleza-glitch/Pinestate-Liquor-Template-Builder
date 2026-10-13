@@ -480,7 +480,7 @@ def build_eg_standard_cost(
         C = Raw Column C
         D = Raw Column O
         E = blank
-        F = Raw Column K
+        F = Raw Column J
         G = Raw Column M
         H = blank
         I = Raw Column B
@@ -603,10 +603,9 @@ def build_eg_promo_cost(
     """
     EG Promo Cost.
 
-    Promo identification rule used here:
-        Include records where Raw Vendor Store Cost Column N (endDate)
-        is populated. The provided source file has no explicit promo flag;
-        confirm this rule matches your business process.
+    Promo identification rule:
+        Include records where Raw Vendor Store Cost Column L
+        (caseQuantity) is greater than zero.
 
     Output Column F uses Raw Column J (caseCost), not Column K
     (frontLineCost).
@@ -618,7 +617,7 @@ def build_eg_promo_cost(
         C = Raw Column C
         D = Raw Column O
         E = Raw Column L
-        F = Raw Column K
+        F = Raw Column J
         G = Raw Column M
         H = Raw Column N
         I = Raw Column B
@@ -643,20 +642,18 @@ def build_eg_promo_cost(
     for _, record in raw_cost.iterrows():
 
         # ----------------------------------------------------
-        # Raw Column N = endDate
+        # Raw Column L = caseQuantity
+        # Include only records where caseQuantity > 0.
         # ----------------------------------------------------
 
-        promo_end_date = clean(
-            record.iloc[13]
-        )
+        case_quantity = clean(record.iloc[11])
 
-        # ----------------------------------------------------
-        # Include records with a populated endDate.
-        # The source file does not contain an explicit promo flag.
-        # ----------------------------------------------------
+        try:
+            has_promo_quantity = float(case_quantity.replace(",", "")) > 0
+        except (TypeError, ValueError):
+            has_promo_quantity = False
 
-        if not promo_end_date:
-
+        if not has_promo_quantity:
             continue
 
         # Output A:L = 12 columns.
